@@ -18,6 +18,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Binder;
@@ -125,6 +126,8 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
     private static LocationTransform sLocationTransform;
     private static LocationProviderFactory sLocationProviderFactory;
 
+    private SharedPreferences pref;
+
     private class ServiceHandler extends Handler {
         public ServiceHandler(Looper looper) {
             super(looper);
@@ -170,6 +173,8 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
 
         logger = LoggerManager.getLogger(LocationServiceImpl.class);
         logger.info("Creating LocationServiceImpl");
+
+        pref = getSharedPreferences("cordova_location_service", MODE_PRIVATE);
 
         mServiceId = System.currentTimeMillis();
 
@@ -268,8 +273,18 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
             // when service was killed and restarted we will restart service
-            start();
-            return START_STICKY;
+            if (getRunningFlag() == true) {
+                start();
+                return START_STICKY;
+            } else {
+                if (mProvider != null) {
+                    mProvider.onStop();
+                }
+
+                stopForeground(true);
+                stopSelf();
+                return START_NOT_STICKY;
+            }
         }
 
         boolean containsCommand = containsCommand(intent);
@@ -351,6 +366,7 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
         mProvider.onConfigure(mConfig);
 
         sIsRunning = true;
+        storeRunningFlag();
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
             public void run() {
@@ -382,6 +398,7 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
 
         broadcastMessage(MSG_ON_SERVICE_STOPPED);
         sIsRunning = false;
+        storeRunningFlag();
     }
 
     @Override
@@ -717,5 +734,13 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
 
     public static @Nullable LocationTransform getLocationTransform() {
         return sLocationTransform;
+    }
+
+    private void storeRunningFlag() {
+        pref.edit().putBoolean("running", sIsRunning).apply();
+    }
+
+    private Boolean getRunningFlag() {
+        return pref.getBoolean("running", false);
     }
 }
